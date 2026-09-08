@@ -69,9 +69,14 @@ namespace ewr {
 
         bool HasBufferedData() const { return !m_buffer.empty(); }
 
+        // Sticky for the life of the framer: the resync below would otherwise
+        // discard the status line as unframed junk before anyone saw it.
+        bool SawHttpReply() const { return m_sawHttpReply; }
+
     private:
         ITransport& m_transport;
         std::vector<unsigned char> m_buffer;
+        bool m_sawHttpReply = false;
     };
 
     struct D4SessionOptions
@@ -115,6 +120,10 @@ namespace ewr {
         uint16_t MtuToHost() const { return m_mtuToHost; }
         int SendCredit() const { return m_sendCredit; }
         const std::string& LastError() const { return m_lastError; }
+
+        // See LooksLikeHttpReply: separates "wrong personality of the right
+        // interface" from a printer that simply never answered.
+        bool SawHttpReply() const { return m_framer.SawHttpReply(); }
 
     private:
         bool SendPacket(uint8_t psid, uint8_t ssid, const std::vector<unsigned char>& payload, uint8_t credit);

@@ -17,7 +17,7 @@ EWR bypasses the need to pay for sketchy third-party reset keys (like WIC Reset)
 * **Smart Protocol Engine:** Constructs exact EEPROM write packets (`|B`) on the fly based on specific printer models. It safely manages the IEEE 1284.4 (D4) hardware credit system to prevent buffer overflows and lockups.
 * **OTA Database Sync:** Automatically fetches a massive, continuously updated database of printer offsets and keys on startup using native OS APIs (Zero bloat).
 * **Cross-Platform Core:**
-  * **Windows:** Native Win32 `SetupAPI` with Asynchronous `OVERLAPPED` I/O to safely drain the Windows Print Spooler buffers, plus a statically linked `libusb` for the vendor-specific interfaces `usbprint.sys` cannot reach - on ET-2xxx units the maintenance engine lives on one of those. Both transports run in one pass, `usbprint.sys` first. Zero custom drivers required, and nothing to install with Zadig.
+  * **Windows:** Native Win32 `SetupAPI` with Asynchronous `OVERLAPPED` I/O to safely drain the Windows Print Spooler buffers, plus a statically linked `libusb` for the vendor-specific interfaces `usbprint.sys` cannot reach - on ET-2xxx units the maintenance engine lives on one of those. Both transports run in one pass, `usbprint.sys` first. Zero custom drivers required.
   * **Linux & macOS:** Uses `libusb` to automatically detach the kernel driver (CUPS) for exclusive, raw hardware access.
 * **Zero Hardcoded PIDs:** Automatically scans your OS USB tree to find connected Epson printers.
 * **Replay Fallback:** If your printer is brand new and not in the database yet, EWR can still dynamically parse and execute raw Wireshark dumps (stripping USBPcap headers automatically).

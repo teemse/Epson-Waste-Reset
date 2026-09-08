@@ -161,6 +161,12 @@ namespace ewr {
             const std::vector<unsigned char> chunk = m_transport.Drain(remaining);
             if (!chunk.empty())
             {
+                if (!m_sawHttpReply && LooksLikeHttpReply(chunk.data(), chunk.size()))
+                {
+                    m_sawHttpReply = true;
+                    EmitTrace(reporter, "d4.http_reply", std::string("[!] ") + kHttpPersonalityError);
+                }
+
                 m_buffer.insert(m_buffer.end(), chunk.begin(), chunk.end());
             }
             else if (Clock::now() >= deadline)
@@ -748,8 +754,10 @@ namespace ewr {
         if (!session.Start())
         {
             result.handshakeFailed = true;
-            result.error = "Printer is not responding to the IEEE 1284.4 handshake ("
-                         + session.LastError() + ") - wrong USB interface or unsupported model.";
+            result.error = session.SawHttpReply()
+                ? kHttpPersonalityError
+                : ("Printer is not responding to the IEEE 1284.4 handshake ("
+                   + session.LastError() + ") - wrong USB interface or unsupported model.");
             reporter.Log(log::Level::Info, log::Stage::Handshake, "exec.handshake_failed",
                          "-> Handshake FAILED: " + session.LastError());
             return result;
@@ -963,8 +971,10 @@ namespace ewr {
         if (!session.Start())
         {
             result.handshakeFailed = true;
-            result.error = "Printer is not responding to the IEEE 1284.4 handshake ("
-                         + session.LastError() + ") - wrong USB interface or unsupported model.";
+            result.error = session.SawHttpReply()
+                ? kHttpPersonalityError
+                : ("Printer is not responding to the IEEE 1284.4 handshake ("
+                   + session.LastError() + ") - wrong USB interface or unsupported model.");
             reporter.Log(log::Level::Info, log::Stage::Handshake, "exec.handshake_failed",
                          "-> Handshake FAILED: " + session.LastError());
             return result;

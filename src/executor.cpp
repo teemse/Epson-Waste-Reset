@@ -55,6 +55,13 @@ namespace ewr {
         return oss.str();
     }
 
+    bool LooksLikeHttpReply(const unsigned char* data, size_t size)
+    {
+        static const char prefix[] = "HTTP/";
+        const size_t length = sizeof(prefix) - 1;
+        return data != nullptr && size >= length && std::equal(prefix, prefix + length, data);
+    }
+
     std::string HexDumpCapped(const unsigned char* data, size_t size, size_t maxBytes)
     {
         if (size <= maxBytes)
@@ -727,6 +734,9 @@ namespace ewr {
                 if (!reply.empty())
                     result.anyBytes = true;
 
+                if (LooksLikeHttpReply(reply.data(), reply.size()))
+                    result.httpReply = true;
+
                 // No envelope to look for here, so a decisive ':42:' token is
                 // the only thing that counts as this path having been answered.
                 if (IsEepromWriteOkAck(reply) || IsEepromWriteNgAck(reply) || IsEepromWriteNaAck(reply))
@@ -783,7 +793,11 @@ namespace ewr {
 
             if (!confirmed)
             {
-                if (!result.anyReply)
+                if (result.httpReply)
+                {
+                    result.error = kHttpPersonalityError;
+                }
+                else if (!result.anyReply)
                 {
                     result.error = result.anyBytes
                         ? "ESC/P Remote: the printer returned data but never a '||:42:' verdict."
@@ -889,6 +903,12 @@ namespace ewr {
         if (!postFlush.empty())
             result.anyBytes = true;
 
+        if (LooksLikeHttpReply(postFlush.data(), postFlush.size()))
+        {
+            result.httpReply = true;
+            EmitTrace(reporter, "end4.http_reply", "[END4] " + std::string(kHttpPersonalityError));
+        }
+
         // 3) Each factory write, framed in END4 and confirmed with ':42:OK;'.
         const int totalDeadlineMs = (options.handshakeDrainTimeoutMs > 0)
             ? options.handshakeDrainTimeoutMs * 2
@@ -927,6 +947,9 @@ namespace ewr {
 
                 if (!reply.empty())
                     result.anyBytes = true;
+
+                if (LooksLikeHttpReply(reply.data(), reply.size()))
+                    result.httpReply = true;
 
                 // Verification below still runs on the whole buffer, which is
                 // robust to usbprint.sys prefix junk.
@@ -998,7 +1021,11 @@ namespace ewr {
 
             if (!confirmed)
             {
-                if (!result.anyReply)
+                if (result.httpReply)
+                {
+                    result.error = kHttpPersonalityError;
+                }
+                else if (!result.anyReply)
                 {
                     result.error = result.anyBytes
                         ? "END4: the printer returned data but never an 'END4' reply - the transport"

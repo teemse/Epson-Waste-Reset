@@ -4801,6 +4801,117 @@ void test_composite_runs_on_the_transports_that_came_up()
     CHECK(dead->Enumerate().empty());
 }
 
+// The exact 57 bytes topdeckg's ET-2800 returned to the END4 packet-mode
+// flush in issue #16.
+static std::vector<unsigned char> Http500Reply()
+{
+    const std::string body = "HTTP/1.0 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+    return std::vector<unsigned char>(body.begin(), body.end());
+}
+
+void test_http_personality_detection()
+{
+    std::cout << "[TEST] test_http_personality_detection" << std::endl;
+
+    const std::vector<unsigned char> http = Http500Reply();
+    CHECK(http.size() == 57);
+    CHECK(ewr::LooksLikeHttpReply(http.data(), http.size()));
+
+    const std::string ok = "HTTP/1.1 200 OK\r\n";
+    CHECK(ewr::LooksLikeHttpReply(reinterpret_cast<const unsigned char*>(ok.data()), ok.size()));
+
+    // Only a leading status line counts. A D4 packet that happens to carry the
+    // bytes further in is still a D4 packet.
+    const std::vector<unsigned char> d4 = { 0x00, 0x00, 0x00, 0x08, 0x01, 0x00, 0x80, 0x00 };
+    CHECK(!ewr::LooksLikeHttpReply(d4.data(), d4.size()));
+
+    std::vector<unsigned char> buried = { 0x00, 0x00 };
+    buried.insert(buried.end(), http.begin(), http.end());
+    CHECK(!ewr::LooksLikeHttpReply(buried.data(), buried.size()));
+
+    // Short and empty buffers must not read past the end.
+    const std::vector<unsigned char> shortBuf = { 'H', 'T', 'T' };
+    CHECK(!ewr::LooksLikeHttpReply(shortBuf.data(), shortBuf.size()));
+    CHECK(!ewr::LooksLikeHttpReply(nullptr, 0));
+}
+
+// The four-week bug: the run reported "returned data but never an END4 reply",
+// which is true and tells nobody which interface to look at instead.
+void test_end4_reports_the_http_personality()
+{
+    std::cout << "[TEST] test_end4_reports_the_http_personality" << std::endl;
+
+    const ewr::DbPrinterModel model = MakeTestModel();
+    const std::vector<std::vector<unsigned char>> commands =
+        ewr::ExtractFactoryWriteCommands(legacy::GenerateSequence(model));
+
+    FakeTransport transport;
+    transport.replyFor = [](const std::vector<unsigned char>&) { return Http500Reply(); };
+
+    ewr::ExecutorOptions options;
+    options.writeKey = model.wkey;
+    options.interPacketDelayMs = 0;
+    options.writeAckTimeoutMs = 10;
+    options.handshakeDrainTimeoutMs = 100;
+
+    ewr::log::Reporter reporter;
+    const ewr::End4Result result =
+        ewr::ExecuteEnd4Sequence(transport, "DDS:0000;", commands, reporter, options);
+
+    CHECK(!result.success);
+    CHECK(result.httpReply);
+    CHECK(result.anyBytes);
+    CHECK(result.error == ewr::kHttpPersonalityError);
+}
+
+void test_esc_remote_reports_the_http_personality()
+{
+    std::cout << "[TEST] test_esc_remote_reports_the_http_personality" << std::endl;
+
+    const ewr::DbPrinterModel model = MakeTestModel();
+    const std::vector<std::vector<unsigned char>> commands =
+        ewr::ExtractFactoryWriteCommands(legacy::GenerateSequence(model));
+
+    FakeTransport transport;
+    transport.replyFor = [](const std::vector<unsigned char>&) { return Http500Reply(); };
+
+    ewr::ExecutorOptions options;
+    options.writeKey = model.wkey;
+    options.interPacketDelayMs = 0;
+    options.writeAckTimeoutMs = 10;
+    options.handshakeDrainTimeoutMs = 100;
+
+    ewr::log::Reporter reporter;
+    const ewr::End4Result result =
+        ewr::ExecuteEscRemoteSequence(transport, commands, reporter, options);
+
+    CHECK(!result.success);
+    CHECK(result.httpReply);
+    CHECK(result.error == ewr::kHttpPersonalityError);
+}
+
+// The D4 framer sees the status line before its resync discards it as junk.
+void test_d4_session_reports_the_http_personality()
+{
+    std::cout << "[TEST] test_d4_session_reports_the_http_personality" << std::endl;
+
+    FakeTransport transport;
+    transport.replyFor = [](const std::vector<unsigned char>&) { return Http500Reply(); };
+
+    ewr::ExecutorOptions options;
+    options.handshakeDrainTimeoutMs = 60;
+    options.writeAckTimeoutMs = 20;
+    options.interPacketDelayMs = 0;
+
+    ewr::log::Reporter reporter;
+    const ewr::QuerySessionResult result =
+        ewr::ExecuteQuerySessionD4(transport, {}, reporter, options);
+
+    CHECK(!result.success);
+    CHECK(result.handshakeFailed);
+    CHECK(result.error == ewr::kHttpPersonalityError);
+}
+
 int main()
 {
     std::cout << "========================================" << std::endl;
@@ -4911,6 +5022,10 @@ int main()
     test_composite_identifies_a_shared_interface_by_number();
     test_composite_routes_every_call_to_the_owning_member();
     test_composite_runs_on_the_transports_that_came_up();
+    test_http_personality_detection();
+    test_end4_reports_the_http_personality();
+    test_esc_remote_reports_the_http_personality();
+    test_d4_session_reports_the_http_personality();
 
     std::cout << "\n----------------------------------------" << std::endl;
     if (g_failures == 0)

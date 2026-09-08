@@ -122,6 +122,16 @@ namespace ewr {
 
     std::string HexDumpCapped(const unsigned char* data, size_t size, size_t maxBytes);
 
+    // ET-2xxx interface 1 carries two alternate settings on one endpoint pair:
+    // alt 0 is 1284.4, alt 1 is IPP-over-USB. Only SET_INTERFACE picks between
+    // them and usbprint.sys cannot issue it, so a Windows run can write D4 into
+    // an HTTP server and get a 500 back (issue #16).
+    bool LooksLikeHttpReply(const unsigned char* data, size_t size);
+
+    inline constexpr const char* kHttpPersonalityError =
+        "This interface answered with HTTP (IPP-over-USB), not IEEE 1284.4 - it is the"
+        " printer's IPP personality, so the maintenance channel is on another interface.";
+
     // User-facing lines are Info events, trace-log lines are Trace events.
     ExecutionResult ExecuteSequence(ITransport& transport,
                                     const std::vector<std::vector<unsigned char>>& sequence,
@@ -177,6 +187,9 @@ namespace ewr {
         // Inbound bytes of any framing. Only silence here indicts the transport:
         // `anyReply` is false whenever the framing merely fails to match.
         bool anyBytes = false;
+        // See LooksLikeHttpReply: the interface is reachable and answering, it
+        // just is not the 1284.4 personality.
+        bool httpReply = false;
         size_t writesTotal = 0;
         size_t writesVerified = 0;
         size_t writesRejected = 0;
